@@ -1,0 +1,167 @@
+# 상속보다는 컴포지션을 사용하라
+
+---
+
+같은 프로그래머가 애초에 상속을 목적으로 통제 가능한 범위내에 존재하는 클래스를 구현해서 이를 상속해 사용한다면 안전하다.
+
+하지만, 이미 재사용을 위해 패키지 경계를 넘어서 확장을 통해 코드를 줄이는 방법을 적용한다면 이는 매우 위험할 수 있다.
+
+조합을 통한 다른 클래스의 메서드는 캡슐화를 깨트리지 않는다, 하지만 클래스 상속의 경우 상위 클래스 캡슐화를 깨트린다. 
+
+상위 클래스는 릴리즈마다 내부 구현이 변경될 수 있고 그로인해 그 클래스를 상속한 하위 클래스 모두 수정이 발생할 수 있다.
+
+또한 상위 클래스에 새로운 메서드가 추가 된다면 하위 클래스 모두 구현을 해야한다는 점이 있다.
+
+만약 보안을 위해 컬렉션에 추가된 원소가 특정 조건을 만족해야하는 프로그램의 경우를 생각해보자.
+
+해당 컬렉션을 상속해 구현하는 모든 클래스를 수정하면 될 것 같지만 이런 방식으로 구현한 뒤 상위 클래스에서 또 다른 원소가 추가 된다면 너무 많은 수정이 전파 된다.
+
+위에서 말한 문제점은 모두 메서드 재정의가 원인 이였기에 메서드를 재정의 하지 않고 새 메서드를 추가하면 될것이라 생각할수 있다.
+
+하지만 상위 클래스에 추가하려는 메서드가 하위 클래스에 추가한 메서드와 시그니처가 같고 반환 타입이 다르다면 이 코드는 컴파일 조차 되지 않는다.
+
+### 상위 클래스에서 문서가 잘 정의되어있지 않고 이해하지 못한채 상속을 사용해서 문제가 발생하는 예시
+
+```java
+import java.util.Collection;
+
+public class InstrumentedHashSet<E> extends HashSet {
+
+    private int addCount = 0;
+
+    @Override
+    public boolean add(E e) {
+        addCount++;
+        return super.add(e);
+    }
+
+    @Override
+    public boolean addAll(Collection<? extends E> c) {
+        addCount += c.size();
+        
+        return super.addAll(c);
+    }
+
+    public int getAddCount() {
+        return addCount;
+    }
+}
+```
+
+HashSet 을 상속해 구현한 InstrumentedHashSet 클래스이다. 
+
+또한 add()와 addAll() 메서드를 재정의 했다.
+
+```java
+InstrumentedHashSet instrumentedHashSet = new InstrumentedHashSet<>();
+
+instrumentedHashSet.addAll(List.of("틱", "탁탁", "펑"));
+```
+
+이 코드 이후 getAddCount() 메서드를 호출하면 3이 나올것이라 기대하지만 실제로는 6이 반환 된다.
+
+이는 상위 클래스인 HashSet 의 addAll() 메서드가 add 메서드를 사용해서 구현한데 있다.
+
+```java
+    public boolean addAll(Collection<? extends E> c) {
+        boolean modified = false;
+        for (E e : c)
+            if (add(e))
+                modified = true;
+        return modified;
+    }
+```
+HashSet 의 addAll() 메서드의 경우 컬렉션의 원소를 add() 메서드를 통해 추가 한다.
+
+이를 모른채 add() 를 추가하는 경우, addCount 의 값이 컬렉션의 원소마다 추가될 것이다.
+
+---
+### 기존 처럼 재 정의를 하지 않고 직접 정의해서 사용하면 상속이 가진 문제를 피할 수 있을까?
+
+
+```java
+// 상위 클래스
+public class ParentClass {
+
+    private static final Object PRESENT = new Object();
+    
+    private HashMap<E,Object> map;
+    
+    public boolean add(E e) {
+        return map.put(e, PRESENT) == null;
+    }
+
+    public boolean addAll(Collection<? extends E> c) {
+        boolean modified = false;
+        for (E e : c)
+            if (add(e))
+                modified = true;
+        return modified;
+    }
+
+}
+
+public class ChildClass extends ParentClass {
+    private int addCount = 0;
+
+
+    @Override
+    public boolean add(E e) {
+        addCount++;
+        return super.add(e);
+    }
+
+    // 재정의가 아닌 직접 메서드 정의
+    public boolean addAllAndCount(Collection<? extends E> c) {
+        boolean modified = false;
+        for (E e : c)
+            if (add(e))
+                modified = true;
+
+        return modified;
+    }
+
+}
+```
+
+```java
+// 상위 클래스
+public class ParentClass {
+
+    private static final Object PRESENT = new Object();
+    
+    private HashMap<E,Object> map;
+    
+    public boolean add(E e) {
+        return map.put(e, PRESENT) == null;
+    }
+
+    public boolean addAll(Collection<? extends E> c) {
+        boolean modified = false;
+        for (E e : c)
+            if (add(e))
+                modified = true;
+        return modified;
+    }
+
+    // 상위 클래스에서 새로 추가할 메서드가 공교롭게 하위 클래스에서 작성한 메서드와 시그니처가 동일하고 리턴타입이 다르다면..?
+    public void addAllAndCount(Collection<? extends E> c) {
+        // 하위 클래스에서 컴파일 에러
+    }
+}
+```
+
+이런 문제를 해결하는 방법은 기존 클래스를 확장하는 대신 새로운 클래스를 정의하고 이를 참조를 통해 구현하는 것이다.
+
+조합을 통한 구현은 기존 클래스의 내부 구현 방식에서도 벗어나며 새로운 메서드가 몇개가 어떻게 추가되던 문제되지 않는다.
+
+상속은 반드시 하위 클래스가 상위 클래스의 '진짜' 하위 타입인 상황에서만 사용한다.
+
+클래스 A를 상속하는 클래스 B를 작성하려고 한다면 "B가 A인가?"라는 질문을 해보자. 그렇다는 확신이 없다면 상속이 아닌 조합을 통해 문제를 해결해보자.
+
+## 정리
+상속은 코드 재사용을 하기엔 강력하지만 캡슐화를 해치며 확장에 걸림돌이 될 수 있다.
+
+또한 확실한 is - a 관계일때도 상위 클래스와 하위 클래스의 패키지가 다르고 상위 클래스가 확장을 고려해서 설계가 되어있지 않다면 여전히 문제가 발생할 수 있다.
+
+상속의 문제를 해결하기 위해선 조합과 전달을 사용하도록 하자.
