@@ -1,4 +1,4 @@
-package ch_1.item_7;
+package ch_2.item_7;
 
 import java.util.Arrays;
 import java.util.EmptyStackException;
