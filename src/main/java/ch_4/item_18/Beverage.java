@@ -1,4 +1,4 @@
-package ch_4;
+package ch_4.item_18;
 
 public class Beverage {
 
